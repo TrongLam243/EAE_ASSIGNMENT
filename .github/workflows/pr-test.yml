@@ -1,0 +1,51 @@
+name: PySpark CI Pipeline
+
+# Trigger Condition: Activated when PR is created or updated to main branch
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+# Security & Permissions: Limit token permissions to read-only
+permissions:
+  contents: read
+
+jobs:
+  static-and-unit-test:
+    name: Code Quality & Unit Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v5
+
+      - name: Set up Java 11
+        # Required to install Java for Spark runtime environment
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '11'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip' 
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Static Test (Flake8)
+        run: |
+          echo "Running Flake8 for linting..."
+          flake8 src/ tests/ --max-line-length=88
+
+      - name: Run PySpark Unit Tests
+        # Run all test cases with coverage report (configured in pytest.ini)
+        run: |
+          pytest tests/ -v
