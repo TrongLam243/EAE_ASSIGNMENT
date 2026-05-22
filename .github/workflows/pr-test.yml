@@ -41,6 +41,8 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run Static Test (Flake8)
+        id: flake8
+        continue-on-error: true
         run: |
           echo "Running Flake8 for linting..."
           if flake8 src/ tests/ --max-line-length=88; then
@@ -51,6 +53,70 @@ jobs:
           fi
 
       - name: Run PySpark Unit Tests
+        id: pytest
+        continue-on-error: true
         # Run all test cases with coverage report (configured in pytest.ini)
         run: |
-          pytest tests/ -v
+          pytest tests/ -v | tee pytest-output.txt
+
+      - name: Summary report
+        if: always()
+        run: |
+          echo "## Test Summary Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Static Test Status
+          echo "### Static Test (Flake8)" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.flake8.outcome }}" == "success" ]; then
+            echo "**Result:** PASSED" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Result:** FAILED" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Unit Test Status with count
+          echo "### Unit Test (Pytest)" >> $GITHUB_STEP_SUMMARY
+          if [ -f pytest-output.txt ]; then
+            # Extract test results
+            PASSED=$(grep -oP '\d+(?= passed)' pytest-output.txt | tail -1 || echo "0")
+            FAILED=$(grep -oP '\d+(?= failed)' pytest-output.txt | tail -1 || echo "0")
+            TOTAL=$((PASSED + FAILED))
+            
+            if [ "${{ steps.pytest.outcome }}" == "success" ]; then
+              echo "- **Status:** PASSED" >> $GITHUB_STEP_SUMMARY
+              echo "- **Test Cases passed:** ${PASSED}/${TOTAL} (100%)" >> $GITHUB_STEP_SUMMARY
+            else
+              PASS_RATE=$(awk "BEGIN {printf \"%.1f\", ($PASSED/$TOTAL)*100}")
+              echo "- **Status:** FAILED" >> $GITHUB_STEP_SUMMARY
+              echo "- **Test Cases passed:** ${PASSED}/${TOTAL} (${PASS_RATE}%)" >> $GITHUB_STEP_SUMMARY
+              echo "- **Failed Cases:** ${FAILED}" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            if [ "${{ steps.pytest.outcome }}" == "success" ]; then
+              echo "- **Status:** PASSED" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "- **Status:** FAILED" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Coverage Report
+          if [ -f .coverage ]; then
+            echo "### Coverage Report" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            python -m coverage report >> $GITHUB_STEP_SUMMARY 2>&1 || echo "Coverage data available in artifacts" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Fail the step if any test failed
+          if [ "${{ steps.flake8.outcome }}" != "success" ] || [ "${{ steps.pytest.outcome }}" != "success" ]; then
+            exit 1
+          fi
+
+      - name: Upload Coverage Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: htmlcov/
+          retention-days: 30
