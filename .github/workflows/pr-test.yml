@@ -43,7 +43,12 @@ jobs:
       - name: Run Static Test (Flake8)
         run: |
           echo "Running Flake8 for linting..."
-          flake8 src/ tests/ --max-line-length=88
+          if flake8 src/ tests/ --max-line-length=88; then
+            echo "Flake8 Static Test: PASSED"
+          else
+            echo "Flake8 Static Test: FAILED"
+            exit 1
+          fi
 
       - name: Run PySpark Unit Tests
         # Run all test cases with coverage report (configured in pytest.ini)
